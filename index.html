@@ -17,7 +17,7 @@
   --ink-soft:#546056;
   --ink-faint:#8A9389;
   --line:#D7DED2;
-  --accent:#7ebf41;
+  --accent:#7ebf41; /* Verde MapaBase Ajustado */
   --accent-ink:#f0f8e9;
   --conforme:#2F9E44;
   --conforme-bg:#E9F7EC;
@@ -86,7 +86,7 @@ summary { list-style: none; }
 .brand-mark img {
   max-width: 100%;
   height: auto;
-  max-height: 40px;
+  max-height: 40px; 
   object-fit: contain;
 }
 .brand-sub{
@@ -234,6 +234,7 @@ nav.mainnav{
 .badge.media{background:#FBF1DC;color:#9A7415;}
 .badge.alta{background:#FCE7DD;color:var(--alta);}
 .badge.critica{background:#F7DEE1;color:var(--critica);}
+.badge.pending{background:#FFF3CD;color:#975A16; border:1px solid #F6E05E;}
 
 .pill{
   display:inline-flex;
@@ -324,6 +325,7 @@ label.field-label{
 .seg button.a.active{background:var(--na);color:#fff;}
 .item-extra{padding:0 16px 16px;border-top:1px dashed var(--line);margin-top:0;padding-top:14px;}
 .item-extra.hidden{display:none;}
+.nc-fields.hidden{display:none;}
 .photo-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
 .photo-thumb{width:64px;height:64px;border-radius:7px;object-fit:cover;border:1px solid var(--line);}
 .photo-add{
@@ -408,7 +410,7 @@ label.field-label{
     </div>
     <nav class="mainnav" id="mainnav"></nav>
     <div class="sidebar-foot">
-      <div id="status-sync">Sincronizado via Supabase</div>
+      <div id="status-sync">Armazenamento Local Ativo (IndexedDB)</div>
       <button class="btn ghost sm" id="btn-logout" style="margin-top:10px; width:100%; color: var(--ink-soft);">Sair do Sistema</button>
     </div>
   </aside>
@@ -423,12 +425,57 @@ label.field-label{
 
 <script>
 /* ============================================================
-   CONFIGURAÇÃO DO BANCO DE DADOS SUPABASE
+   CONFIGURAÇÃO DO BANCO DE DADOS SUPABASE E INDEXEDDB
    ============================================================ */
 const SUPABASE_URL = 'https://luvxmuhtemyloljnqgif.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1dnhtdWh0ZW15bG9sam5xZ2lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NTE1MzcsImV4cCI6MjEwMDEyNzUzN30.inJ4fIL8ayPeg57snqeMRjFFwbSB1tZrCWQh0ytjXLA';
 
 const _supabase = (window.supabase && SUPABASE_URL) ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+// MOTOR DE ARMAZENAMENTO OFFLINE ROBUSTO (IndexedDB)
+const idb = {
+  db: null,
+  async init() {
+    if(this.db) return;
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('MapaBaseDB', 1);
+      req.onupgradeneeded = e => e.target.result.createObjectStore('store');
+      req.onsuccess = e => { this.db = e.target.result; resolve(); };
+      req.onerror = e => reject(e);
+    });
+  },
+  async get(key) {
+    await this.init();
+    return new Promise((resolve) => {
+      const tx = this.db.transaction('store', 'readonly');
+      const req = tx.objectStore('store').get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+  },
+  async set(key, val) {
+    await this.init();
+    return new Promise((resolve) => {
+      const tx = this.db.transaction('store', 'readwrite');
+      tx.objectStore('store').put(val, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  },
+  async remove(key) {
+    await this.init();
+    return new Promise((resolve) => {
+      const tx = this.db.transaction('store', 'readwrite');
+      tx.objectStore('store').delete(key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  }
+};
+
+async function storageGet(key) { return await idb.get(key); }
+async function storageSet(key, value) { return await idb.set(key, value); }
+async function storageRemove(key) { return await idb.remove(key); }
 
 /* ============================================================
    ESTADO E PERSISTÊNCIA
@@ -449,23 +496,9 @@ const state = {
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
-async function storageGet(key) {
-  try {
-    const val = localStorage.getItem(key);
-    return val ? JSON.parse(val) : null;
-  } catch(e) { return null; }
-}
-
-async function storageSet(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch(e) { return false; }
-}
-
-/* --- SINCRONIZAÇÃO COMPLETA COM COMPATIBILIDADE DE SETOR --- */
+/* --- SINCRONIZAÇÃO COMPLETA COM COMPATIBILIDADE DE SETOR E OFFLINE --- */
 async function syncGlobalNuvem(){
-  if(!_supabase) return false;
+  if(!_supabase || !navigator.onLine) return false;
   try {
     const [empReq, estReq] = await Promise.all([
       _supabase.from('empreendimentos').select('*'),
@@ -500,49 +533,196 @@ async function syncGlobalNuvem(){
 }
 
 async function loadVistoriasNuvem(){
-  if(_supabase){
+  let localIndex = (await storageGet('vistorias:index')) || [];
+  
+  if(_supabase && navigator.onLine){
     try{
-      const { data, error } = await _supabase.from('vistorias').select('*').order('data_hora', { ascending: false });
+      const { data, error } = await _supabase.from('vistorias').select('id, empreendimento_nome, estrutura_nome, responsavel, data_hora, total_itens, total_nc, criticidade_max');
       if(data && !error){
-        state.vistoriasIndex = data.map(d => ({
-          id: d.id,
-          empreendimentoNome: d.empreendimento_nome,
-          estruturaNome: d.estrutura_nome,
-          responsavel: d.responsavel,
-          dataHora: d.data_hora,
-          totalItens: d.total_itens,
-          totalNC: d.total_nc,
-          criticidadeMax: d.criticidade_max,
-          criticidades: (d.itens||[]).filter(i=>i.status==='nc').map(i=>i.criticidade)
-        }));
+        const cloudMap = {};
+        data.forEach(d => {
+          cloudMap[d.id] = {
+            id: d.id,
+            empreendimentoNome: d.empreendimento_nome,
+            estruturaNome: d.estrutura_nome,
+            responsavel: d.responsavel,
+            dataHora: d.data_hora,
+            totalItens: d.total_itens,
+            totalNC: d.total_nc,
+            criticidadeMax: d.criticidade_max,
+            syncStatus: 'synced'
+          };
+        });
+
+        // Mantém vistorias locais pendentes que ainda não subiram
+        localIndex.forEach(lv => {
+           if(lv.syncStatus === 'pending') cloudMap[lv.id] = lv;
+        });
+
+        state.vistoriasIndex = Object.values(cloudMap);
         await storageSet('vistorias:index', state.vistoriasIndex);
       }
     }catch(e){}
   } else {
-    state.vistoriasIndex = (await storageGet('vistorias:index')) || [];
+    state.vistoriasIndex = localIndex;
   }
 }
 
 async function loadVistoria(id){ 
-  if(_supabase){
+  let v = await storageGet('vistoria:'+id); 
+  if(v) return v;
+
+  if(_supabase && navigator.onLine){
     try{
       const { data } = await _supabase.from('vistorias').select('*').eq('id', id).single();
-      if(data) return {
-        id: data.id,
-        empreendimentoNome: data.empreendimento_nome,
-        estruturaNome: data.estrutura_nome,
-        responsavel: data.responsavel,
-        dataHora: data.data_hora,
-        gps: data.gps,
-        itens: data.itens
-      };
+      if(data) {
+        v = {
+          id: data.id,
+          empreendimentoNome: data.empreendimento_nome,
+          estruturaNome: data.estrutura_nome,
+          responsavel: data.responsavel,
+          dataHora: data.data_hora,
+          gps: data.gps,
+          itens: data.itens,
+          syncStatus: 'synced'
+        };
+        await storageSet('vistoria:'+id, v);
+        return v;
+      }
     }catch(e){}
   }
-  return await storageGet('vistoria:'+id); 
+  return null;
 }
 
 /* ============================================================
-   EXPORTAÇÃO PARA EXCEL (CSV FORMATADO PARA PORTUGUÊS)
+   FUNÇÕES PARA SALVAR OFFLINE E SINCRONIZAR NA NUVEM
+   ============================================================ */
+async function saveVistoria(v){
+  const idx = state.vistoriasIndex.findIndex(x => x.id === v.id);
+  
+  let isOnline = navigator.onLine;
+  let syncSuccess = false;
+
+  if(isOnline && _supabase){
+    try {
+      const { error } = await _supabase.from('vistorias').upsert({
+        id: v.id,
+        empreendimento_nome: v.empreendimentoNome,
+        estrutura_nome: v.estruturaNome,
+        responsavel: v.responsavel,
+        data_hora: v.dataHora,
+        gps: v.gps,
+        itens: v.itens,
+        total_itens: v.itens.length,
+        total_nc: v.itens.filter(i=>i.status==='nc').length,
+        criticidade_max: v.itens.filter(i=>i.status==='nc').reduce((max,i)=> ({critica:4,alta:3,media:2,baixa:1}[i.criticidade]||0) > ({critica:4,alta:3,media:2,baixa:1}[max]||0) ? i.criticidade : max, null)
+      });
+      if(!error) syncSuccess = true;
+    } catch(e) {}
+  }
+
+  v.syncStatus = syncSuccess ? 'synced' : 'pending';
+
+  const indexData = {
+    id: v.id, empreendimentoNome: v.empreendimentoNome,
+    estruturaNome: v.estruturaNome, responsavel: v.responsavel,
+    dataHora: v.dataHora, totalItens: v.itens.length,
+    totalNC: v.itens.filter(i=>i.status==='nc').length,
+    criticidadeMax: v.itens.filter(i=>i.status==='nc').reduce((max,i)=> ({critica:4,alta:3,media:2,baixa:1}[i.criticidade]||0) > ({critica:4,alta:3,media:2,baixa:1}[max]||0) ? i.criticidade : max, null),
+    syncStatus: v.syncStatus
+  };
+
+  if(idx >= 0) state.vistoriasIndex[idx] = indexData;
+  else state.vistoriasIndex.push(indexData);
+
+  await storageSet('vistorias:index', state.vistoriasIndex);
+  await storageSet('vistoria:'+v.id, v);
+
+  if(!syncSuccess) showToast('Salvo Localmente (OFFLINE). Sincronize quando houver internet.');
+  else showToast('Vistoria salva com sucesso na Nuvem!');
+}
+
+window.sincronizarPendentes = async function() {
+  if(!navigator.onLine) { showToast('Sem conexão com a internet!'); return; }
+  
+  const pendentes = state.vistoriasIndex.filter(v => v.syncStatus === 'pending');
+  if(pendentes.length === 0) { showToast('Nenhuma vistoria pendente.'); return; }
+
+  showToast(`Sincronizando ${pendentes.length} vistoria(s)...`);
+  let successCount = 0;
+
+  for(let p of pendentes) {
+    const v = await loadVistoria(p.id);
+    if(v) {
+      const { error } = await _supabase.from('vistorias').upsert({
+        id: v.id, empreendimento_nome: v.empreendimentoNome, estrutura_nome: v.estruturaNome,
+        responsavel: v.responsavel, data_hora: v.dataHora, gps: v.gps, itens: v.itens,
+        total_itens: v.itens.length, total_nc: v.itens.filter(i=>i.status==='nc').length,
+        criticidade_max: v.itens.filter(i=>i.status==='nc').reduce((max,i)=> ({critica:4,alta:3,media:2,baixa:1}[i.criticidade]||0) > ({critica:4,alta:3,media:2,baixa:1}[max]||0) ? i.criticidade : max, null)
+      });
+      if(!error) {
+        v.syncStatus = 'synced';
+        p.syncStatus = 'synced';
+        await storageSet('vistoria:'+v.id, v);
+        successCount++;
+      }
+    }
+  }
+
+  await storageSet('vistorias:index', state.vistoriasIndex);
+  render();
+  showToast(`${successCount} vistoria(s) sincronizada(s) com a nuvem!`);
+};
+
+async function deleteVistoria(id){
+  if(!confirm('Tem certeza de que deseja excluir esta vistoria? Esta ação não pode ser desfeita.')) return;
+  showToast('Excluindo vistoria...');
+  
+  state.vistoriasIndex = state.vistoriasIndex.filter(v => v.id !== id);
+  await storageSet('vistorias:index', state.vistoriasIndex);
+  await storageRemove('vistoria:'+id);
+
+  if(_supabase && navigator.onLine){
+    await _supabase.from('vistorias').delete().eq('id', id);
+  }
+
+  state.vistoriaAberta = null;
+  setView('vistorias');
+  showToast('Vistoria excluída com sucesso.');
+}
+
+function editarVistoria(v){
+  let emp = state.empreendimentos.find(e => e.nome === v.empreendimentoNome);
+  let est = state.estruturas.find(e => e.nome === v.estruturaNome);
+  
+  const respostas = {};
+  (v.itens || []).forEach(it => {
+    respostas[it.itemId || it.id] = {
+      status: it.status,
+      observacao: it.observacao || '',
+      criticidade: it.criticidade || 'media',
+      recomendacao: it.recomendacao || '',
+      fotos: it.fotos || []
+    };
+  });
+
+  state.novaVistoria = {
+    id: v.id,
+    empreendimentoId: emp ? emp.id : null,
+    estruturaId: est ? est.id : null,
+    step: 3,
+    respostas: respostas,
+    gps: v.gps,
+    responsavel: v.responsavel,
+    dataHora: v.dataHora,
+    itensOriginal: v.itens
+  };
+
+  setView('nova');
+}
+
+/* ============================================================
+   EXPORTAÇÃO PARA EXCEL E PDF
    ============================================================ */
 window.exportarExcelVistorias = async function() {
   showToast('Gerando base Excel, aguarde...');
@@ -589,103 +769,6 @@ window.exportarExcelVistorias = async function() {
   showToast('Download do Excel concluído!');
 };
 
-/* ============================================================
-   FUNÇÕES PARA SALVAR E EXCLUIR VISTORIA NA NUVEM
-   ============================================================ */
-async function saveVistoria(v){
-  const idx = state.vistoriasIndex.findIndex(x => x.id === v.id);
-  const indexData = {
-    id: v.id, empreendimentoNome: v.empreendimentoNome,
-    estruturaNome: v.estruturaNome, responsavel: v.responsavel,
-    dataHora: v.dataHora, totalItens: v.itens.length,
-    totalNC: v.itens.filter(i=>i.status==='nc').length,
-    criticidadeMax: v.itens.filter(i=>i.status==='nc').reduce((max,i)=> ({critica:4,alta:3,media:2,baixa:1}[i.criticidade]||0) > ({critica:4,alta:3,media:2,baixa:1}[max]||0) ? i.criticidade : max, null),
-    criticidades: v.itens.filter(i=>i.status==='nc').map(i=>i.criticidade)
-  };
-
-  if(idx >= 0){
-    state.vistoriasIndex[idx] = indexData;
-  } else {
-    state.vistoriasIndex.push(indexData);
-  }
-
-  await storageSet('vistorias:index', state.vistoriasIndex);
-  await storageSet('vistoria:'+v.id, v);
-
-  if(_supabase){
-    const { error } = await _supabase.from('vistorias').upsert({
-      id: v.id,
-      empreendimento_nome: v.empreendimentoNome,
-      estrutura_nome: v.estruturaNome,
-      responsavel: v.responsavel,
-      data_hora: v.dataHora,
-      gps: v.gps,
-      itens: v.itens,
-      total_itens: v.itens.length,
-      total_nc: v.itens.filter(i=>i.status==='nc').length,
-      criticidade_max: indexData.criticidadeMax
-    });
-    if(error) {
-      console.error("Erro no Supabase:", error);
-      alert("Houve um erro ao enviar para a nuvem. Verifique sua internet.");
-    }
-  }
-}
-
-async function deleteVistoria(id){
-  if(!confirm('Tem certeza de que deseja excluir esta vistoria? Esta ação não pode ser desfeita.')) return;
-  showToast('Excluindo vistoria da Nuvem...');
-  
-  state.vistoriasIndex = state.vistoriasIndex.filter(v => v.id !== id);
-  await storageSet('vistorias:index', state.vistoriasIndex);
-  localStorage.removeItem('vistoria:'+id);
-
-  if(_supabase){
-    const { error } = await _supabase.from('vistorias').delete().eq('id', id);
-    if(error){
-      console.error("Erro ao excluir no Supabase:", error);
-      alert("Erro ao excluir na nuvem.");
-    }
-  }
-
-  state.vistoriaAberta = null;
-  setView('vistorias');
-  showToast('Vistoria excluída com sucesso.');
-}
-
-function editarVistoria(v){
-  let emp = state.empreendimentos.find(e => e.nome === v.empreendimentoNome);
-  let est = state.estruturas.find(e => e.nome === v.estruturaNome);
-  
-  const respostas = {};
-  (v.itens || []).forEach(it => {
-    respostas[it.itemId || it.id] = {
-      status: it.status,
-      observacao: it.observacao || '',
-      criticidade: it.criticidade || 'media',
-      recomendacao: it.recomendacao || '',
-      fotos: it.fotos || []
-    };
-  });
-
-  state.novaVistoria = {
-    id: v.id,
-    empreendimentoId: emp ? emp.id : null,
-    estruturaId: est ? est.id : null,
-    step: 3,
-    respostas: respostas,
-    gps: v.gps,
-    responsavel: v.responsavel,
-    dataHora: v.dataHora,
-    itensOriginal: v.itens
-  };
-
-  setView('nova');
-}
-
-/* ============================================================
-   GERAÇÃO DE PDF CONSOLIDADO (MULTÍPLAS VISTORIAS)
-   ============================================================ */
 window.openRelatorioConsolidado = async function(tipo, valor, empNome) {
   showToast('Preparando relatório em PDF, aguarde...');
   let indexVists = [];
@@ -727,8 +810,9 @@ function viewRelatorioConsolidado() {
     </div>
   </div>
 
-  <div class="print-only-title" style="display:none; font-family:var(--font-display); font-size:28px; font-weight:700; margin-bottom:30px; text-align:center; color:var(--ink);">
-    ${esc(state.tituloConsolidado)}
+  <div class="print-only-title" style="display:none; text-align:center; margin-bottom:30px;">
+    <img src="LOGO_VERT.png" style="height:60px; margin-bottom:10px;">
+    <h1 style="font-family:var(--font-display);font-size:26px;margin:0;">${esc(state.tituloConsolidado)}</h1>
   </div>
 
   ${vists.map((v, i) => {
@@ -864,7 +948,7 @@ document.getElementById('btn-logout').onclick = async () => {
    INICIALIZAÇÃO DO APP APÓS LOGIN BEM-SUCEDIDO
    ============================================================ */
 async function iniciarApp(){
-  showToast('Sincronizando com a Nuvem...');
+  showToast('Carregando Banco de Dados Local...');
   const syncOk = await syncGlobalNuvem();
   
   if(!syncOk){
@@ -872,11 +956,12 @@ async function iniciarApp(){
     const est = await storageGet('estruturas');
     state.empreendimentos = emp || [];
     state.estruturas = est || [];
+    await loadVistoriasNuvem(); // Tenta carregar o cache local
   }
 
   if(state.estruturas.length === 0){
     state.estruturas = DEFAULT_ESTRUTURAS;
-    if(_supabase) {
+    if(_supabase && navigator.onLine) {
       for(let e of state.estruturas){
         const payloadItens = { setor: e.setor, list: e.itens };
         await _supabase.from('estruturas').upsert({id: e.id, nome: e.nome, itens: payloadItens});
@@ -1219,7 +1304,7 @@ function renderNav(){
     b.addEventListener('click', async ()=> {
       if(b.dataset.nav === 'nova') state.novaVistoria = null;
       
-      if((b.dataset.nav === 'dashboard' || b.dataset.nav === 'vistorias') && _supabase){
+      if((b.dataset.nav === 'dashboard' || b.dataset.nav === 'vistorias') && _supabase && navigator.onLine){
         showToast('Atualizando dados da Nuvem...');
         await syncGlobalNuvem();
       }
@@ -1358,13 +1443,14 @@ function viewDashboard(){
 
   <div class="card" style="margin-top:20px;">
     <div style="padding:16px 20px 0;"><h3 style="margin:0 0 4px;font-family:var(--font-display);font-size:20px;font-weight:600;">Vistorias Recentes (Filtro Ativo)</h3></div>
-    ${recentes.length ? `<table style="margin-top:8px;"><thead><tr><th>Data</th><th>Empreendimento</th><th>Estrutura</th><th>Responsável</th><th>NC</th><th>Criticidade</th></tr></thead><tbody>
+    ${recentes.length ? `<table style="margin-top:8px;"><thead><tr><th>Data</th><th>Empreendimento</th><th>Estrutura</th><th>Responsável</th><th>Status Nuvem</th><th>NC</th><th>Criticidade</th></tr></thead><tbody>
       ${recentes.map(v=>`
         <tr class="clickable" data-open="${v.id}">
           <td>${fmtDate(v.dataHora)}</td>
           <td>${esc(v.empreendimentoNome)}</td>
           <td>${esc(v.estruturaNome)}</td>
           <td>${esc(v.responsavel||'—')}</td>
+          <td>${v.syncStatus==='pending'?'<span class="badge pending">⏳ Pendente</span>':'<span class="badge conforme">✅ Nuvem</span>'}</td>
           <td>${v.totalNC>0?`<span class="badge nc">${v.totalNC} NC</span>`:`<span class="badge conforme">OK</span>`}</td>
           <td>${v.criticidadeMax ? `<span class="badge ${v.criticidadeMax}">${criticidadeLabel(v.criticidadeMax)}</span>` : '—'}</td>
         </tr>`).join('')}
@@ -1391,12 +1477,13 @@ function bindDashboard(){
       const v = await loadVistoria(tr.dataset.open);
       state.vistoriaAberta = v;
       setView('vistoria-detalhe');
+      window.scrollTo(0,0);
     });
   });
 }
 
 /* ============================================================
-   EMPREENDIMENTOS
+   EMPREENDIMENTOS E ESTRUTURAS
    ============================================================ */
 function viewEmpreendimentos(){
   return `
@@ -1487,7 +1574,7 @@ function empreendimentoModal(existing){
       if(!confirm('Excluir este empreendimento? As vistorias já realizadas serão mantidas.')) return;
       state.empreendimentos = state.empreendimentos.filter(e=>e.id!==existing.id);
       await storageSet('empreendimentos', state.empreendimentos);
-      if(_supabase) await _supabase.from('empreendimentos').delete().eq('id', existing.id);
+      if(_supabase && navigator.onLine) await _supabase.from('empreendimentos').delete().eq('id', existing.id);
       close(); render(); showToast('Empreendimento excluído.');
     };
   }
@@ -1508,7 +1595,7 @@ function empreendimentoModal(existing){
     }
     
     await storageSet('empreendimentos', state.empreendimentos);
-    if(_supabase) {
+    if(_supabase && navigator.onLine) {
       await _supabase.from('empreendimentos').upsert({ id: empObj.id, nome: empObj.nome, tipo: empObj.tipo, estruturas: empObj.estruturas, criado_em: empObj.criadoEm });
     }
     
@@ -1524,9 +1611,6 @@ function bindEmpreendimentos(){
   });
 }
 
-/* ============================================================
-   BIBLIOTECA DE ESTRUTURAS
-   ============================================================ */
 function viewEstruturas(){
   const setores = [
     { key: 'Mineração', titulo: '⛏️ Estruturas de Mineração' },
@@ -1730,7 +1814,7 @@ function estruturaModal(existing){
       
       await storageSet('estruturas', state.estruturas);
       await storageSet('empreendimentos', state.empreendimentos);
-      if(_supabase) await _supabase.from('estruturas').delete().eq('id', existing.id);
+      if(_supabase && navigator.onLine) await _supabase.from('estruturas').delete().eq('id', existing.id);
       
       close(); render(); showToast('Estrutura excluída.');
     };
@@ -1743,7 +1827,7 @@ function estruturaModal(existing){
       
       state.estruturas.push(copia);
       await storageSet('estruturas', state.estruturas);
-      if(_supabase) {
+      if(_supabase && navigator.onLine) {
         const payloadItens = { setor: copia.setor, list: copia.itens };
         await _supabase.from('estruturas').upsert({ id: copia.id, nome: copia.nome, itens: payloadItens });
       }
@@ -1768,7 +1852,7 @@ function estruturaModal(existing){
     }
     
     await storageSet('estruturas', state.estruturas);
-    if(_supabase) {
+    if(_supabase && navigator.onLine) {
       const payloadItens = { setor: estObj.setor, list: estObj.itens };
       await _supabase.from('estruturas').upsert({ id: estObj.id, nome: estObj.nome, itens: payloadItens });
     }
@@ -1784,7 +1868,7 @@ function bindEstruturas(){
     if(!confirm('ATENÇÃO: Isso vai restaurar a biblioteca para o padrão original da MapaBase. Confirma?')) return;
     showToast('Restaurando nuvem...');
     
-    if(_supabase) {
+    if(_supabase && navigator.onLine) {
        const { data } = await _supabase.from('estruturas').select('id');
        if(data && data.length) {
           const ids = data.map(d=>d.id);
@@ -1794,7 +1878,7 @@ function bindEstruturas(){
     state.estruturas = DEFAULT_ESTRUTURAS;
     await storageSet('estruturas', state.estruturas);
     
-    if(_supabase) {
+    if(_supabase && navigator.onLine) {
       for(let e of state.estruturas){
         const payloadItens = { setor: e.setor, list: e.itens };
         await _supabase.from('estruturas').upsert({id: e.id, nome: e.nome, itens: payloadItens});
@@ -1911,7 +1995,9 @@ function viewNovaVistoria(){
 function renderChecklistItem(it, nv, numero){
   const r = nv.respostas[it.id] || { status:null, observacao:'', criticidade:'media', recomendacao:'', fotos:[] };
   nv.respostas[it.id] = r;
-  const showExtra = r.status === 'nc';
+  const hasStatus = r.status !== null && r.status !== undefined;
+  const isNC = r.status === 'nc';
+  
   return `
   <div class="item-card" data-itemid="${it.id}">
     <div class="item-top">
@@ -1925,24 +2011,29 @@ function renderChecklistItem(it, nv, numero){
         <button type="button" class="a ${r.status==='na'?'active':''}" data-status="na">N/A</button>
       </div>
     </div>
-    <div class="item-extra ${showExtra?'':'hidden'}" data-extra="${it.id}">
+    
+    <div class="item-extra ${hasStatus ? '' : 'hidden'}" data-extra="${it.id}">
       <div class="field" style="margin-bottom:10px;">
-        <label class="field-label">Observação</label>
-        <textarea data-obs="${it.id}" placeholder="Descreva a não conformidade observada...">${esc(r.observacao)}</textarea>
+        <label class="field-label">Observação ${isNC ? '<span style="color:var(--nc)">(Obrigatória)</span>' : '(Opcional)'}</label>
+        <textarea data-obs="${it.id}" placeholder="${isNC ? 'Justifique a não conformidade obrigatoriamente...' : 'Descreva observações pertinentes...'}">${esc(r.observacao)}</textarea>
       </div>
-      <div class="grid cols-2">
-        <div class="field" style="margin-bottom:10px;">
-          <label class="field-label">Criticidade</label>
-          <select data-crit="${it.id}">
-            ${['baixa','media','alta','critica'].map(c=>`<option value="${c}" ${r.criticidade===c?'selected':''}>${criticidadeLabel(c)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field" style="margin-bottom:10px;">
-          <label class="field-label">Recomendação técnica</label>
-          <input type="text" data-rec="${it.id}" value="${esc(r.recomendacao)}" placeholder="Ação corretiva sugerida">
+      
+      <div class="nc-fields ${isNC ? '' : 'hidden'}" data-ncfields="${it.id}">
+        <div class="grid cols-2">
+          <div class="field" style="margin-bottom:10px;">
+            <label class="field-label">Criticidade</label>
+            <select data-crit="${it.id}">
+              ${['baixa','media','alta','critica'].map(c=>`<option value="${c}" ${r.criticidade===c?'selected':''}>${criticidadeLabel(c)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field" style="margin-bottom:10px;">
+            <label class="field-label">Recomendação técnica</label>
+            <input type="text" data-rec="${it.id}" value="${esc(r.recomendacao)}" placeholder="Ação corretiva sugerida">
+          </div>
         </div>
       </div>
-      <label class="field-label">Fotos (Câmera ou Galeria)</label>
+      
+      <label class="field-label">Fotos (Câmera ou Galeria) ${isNC ? '(Recomendado)' : '(Opcional)'}</label>
       <div class="photo-row" data-photos="${it.id}">
         ${r.fotos.map((f,i)=>`<img class="photo-thumb" src="${f}" data-photoidx="${i}">`).join('')}
         <label class="photo-add">＋<input type="file" accept="image/*" multiple data-photoinput="${it.id}" style="display:none;"></label>
@@ -1997,7 +2088,7 @@ function bindNovaVistoria(){
       btn.addEventListener('click', ()=>{
         const id = seg.dataset.seg;
         state.novaVistoria.respostas[id].status = btn.dataset.status;
-        render();
+        render(); // Re-renderiza para abrir/fechar as caixas de observação automaticamente
       });
     });
   });
@@ -2043,7 +2134,15 @@ async function finalizarVistoria(){
     return;
   }
   
-  btn.disabled = true; btn.textContent = 'Enviando para a Nuvem...';
+  // Validação: Proibir finalização se houver NC sem observação
+  const respostasArray = Object.values(nv.respostas);
+  const faltouObs = respostasArray.some(r => r.status === 'nc' && (!r.observacao || !r.observacao.trim()));
+  if(faltouObs) {
+    showToast('⚠️ Preencha a observação para todos os itens marcados como Não Conforme!');
+    return;
+  }
+  
+  btn.disabled = true; btn.textContent = 'Salvando vistoria...';
 
   let itensLista = est.itens.length ? est.itens : (nv.itensOriginal || []);
   if(!itensLista.length && nv.respostas){
@@ -2073,12 +2172,11 @@ async function finalizarVistoria(){
   };
   
   await saveVistoria(vistoria);
-  await loadVistoriasNuvem();
 
   state.novaVistoria = null;
   state.vistoriaAberta = vistoria;
   setView('vistoria-detalhe');
-  showToast('Vistoria salva com sucesso na Nuvem!');
+  window.scrollTo(0,0);
 }
 
 /* ============================================================
@@ -2099,6 +2197,8 @@ function viewVistorias(){
     porEmpreendimento[emp].push(v);
   });
 
+  const temPendentes = rows.some(v => v.syncStatus === 'pending');
+
   return `
   <div class="view-head no-print">
     <div>
@@ -2107,6 +2207,7 @@ function viewVistorias(){
       <div class="view-sub">Inspeções agrupadas por pasta de empreendimento e organizadas por datas.</div>
     </div>
     <div class="rowflex">
+      ${temPendentes ? `<button class="btn ghost danger" onclick="sincronizarPendentes()">⏳ Sincronizar Pendentes</button>` : ''}
       <button class="btn primary" onclick="exportarExcelVistorias()">📊 Exportar para Excel</button>
     </div>
   </div>
@@ -2154,7 +2255,7 @@ function viewVistorias(){
                       <th>Data / Hora</th>
                       <th>Estrutura</th>
                       <th>Responsável</th>
-                      <th>Itens</th>
+                      <th>Status Nuvem</th>
                       <th>NC</th>
                       <th>Criticidade</th>
                     </tr>
@@ -2165,7 +2266,7 @@ function viewVistorias(){
                         <td><strong>${fmtDate(v.dataHora)}</strong></td>
                         <td>${esc(v.estruturaNome)}</td>
                         <td>${esc(v.responsavel||'—')}</td>
-                        <td>${v.totalItens}</td>
+                        <td>${v.syncStatus==='pending'?'<span class="badge pending">⏳ Pendente</span>':'<span class="badge conforme">✅ Nuvem</span>'}</td>
                         <td>${v.totalNC > 0 ? `<span class="badge nc">${v.totalNC} NC</span>` : `<span class="badge conforme">OK</span>`}</td>
                         <td>${v.criticidadeMax ? `<span class="badge ${v.criticidadeMax}">${criticidadeLabel(v.criticidadeMax)}</span>` : '—'}</td>
                       </tr>
@@ -2189,17 +2290,26 @@ function bindVistorias(){
       const v = await loadVistoria(tr.dataset.open);
       state.vistoriaAberta = v;
       setView('vistoria-detalhe');
+      window.scrollTo(0,0);
     });
   });
 }
 
 /* ============================================================
-   DETALHE DA VISTORIA (RELATÓRIO)
+   DETALHE DA VISTORIA (RELATÓRIO COM PAINEL DE EVOLUÇÃO)
    ============================================================ */
 function viewVistoriaDetalhe(){
   const v = state.vistoriaAberta;
   if(!v) return '<div class="empty">Vistoria não encontrada.</div>';
   const nc = v.itens.filter(i=>i.status==='nc');
+  
+  // FILTRAR HISTÓRICO DESSA ESTRUTURA NESTE EMPREENDIMENTO
+  const history = state.vistoriasIndex.filter(vi => 
+    vi.empreendimentoNome === v.empreendimentoNome && 
+    vi.estruturaNome === v.estruturaNome && 
+    vi.id !== v.id
+  ).sort((a,b)=> new Date(b.dataHora) - new Date(a.dataHora));
+
   return `
   <div class="view-head no-print">
     <div><div class="eyebrow">Relatório</div><h1 class="view-title">${esc(v.estruturaNome)}</h1>
@@ -2259,6 +2369,28 @@ function viewVistoriaDetalhe(){
       <div style="font-weight:600;margin-bottom:8px;">${esc(it.texto)}</div>
       <div class="photo-row">${it.fotos.map(f=>`<img class="photo-thumb" style="width:120px;height:120px;" src="${f}">`).join('')}</div>
     </div>`).join('') : `<div class="card card-pad hint">Nenhuma foto anexada.</div>`}
+    
+  ${history.length > 0 ? `
+  <div style="page-break-before: auto; margin-top:40px;">
+    <h3 style="font-family:var(--font-display);font-size:22px;font-weight:600;margin:0 0 10px;">📈 Evolução das Inspeções (Histórico da Estrutura)</h3>
+    <div class="card" style="margin-bottom:22px; overflow-x:auto;">
+      <table>
+        <thead><tr><th>Data / Hora</th><th>Responsável</th><th>Status Nuvem</th><th>NCs</th><th>Criticidade Máx.</th><th class="no-print">Ação</th></tr></thead>
+        <tbody>
+          ${history.map(h => `
+            <tr>
+              <td>${fmtDate(h.dataHora)}</td>
+              <td>${esc(h.responsavel || '—')}</td>
+              <td>${h.syncStatus==='pending'?'⏳ Pendente':'✅ Nuvem'}</td>
+              <td>${h.totalNC > 0 ? `<span class="badge nc">${h.totalNC} NC</span>` : `<span class="badge conforme">OK</span>`}</td>
+              <td>${h.criticidadeMax ? `<span class="badge ${h.criticidadeMax}">${criticidadeLabel(h.criticidadeMax)}</span>` : '—'}</td>
+              <td class="no-print"><button class="btn ghost sm" data-openvist="${h.id}">Ver Relatório</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>` : ''}
   `;
 }
 
@@ -2268,6 +2400,17 @@ function bindVistoriaDetalhe(){
   document.getElementById('btn-editar-vistoria')?.addEventListener('click', ()=> editarVistoria(v));
   document.getElementById('btn-voltar-lista')?.addEventListener('click', ()=> setView('vistorias'));
   document.getElementById('btn-imprimir')?.addEventListener('click', ()=> window.print());
+  
+  document.querySelectorAll('[data-openvist]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const pastV = await loadVistoria(btn.dataset.openvist);
+      if(pastV) {
+        state.vistoriaAberta = pastV;
+        setView('vistoria-detalhe');
+        window.scrollTo(0,0);
+      }
+    });
+  });
 }
 
 /* ============================================================
