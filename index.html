@@ -47,7 +47,7 @@ button{font-family:inherit;cursor:pointer;}
 input,select,textarea{font-family:inherit;}
 ::selection{background:var(--accent);color:#fff;}
 
-/* ---------- TELA DE LOGIN (SOBREPOSTA) ---------- */
+/* ---------- TELA DE LOGIN ---------- */
 #login-screen{
   position:fixed;inset:0;background:var(--ink);z-index:9999;
   display:flex;align-items:center;justify-content:center;padding:20px;
@@ -260,7 +260,7 @@ tr.clickable:hover{background:var(--surface-2);cursor:pointer;}
 }
 .empty .ic{font-size:34px;margin-bottom:10px;}
 
-input[type=text],input[type=password],input[type=datetime-local],input[type=number],select,textarea{
+input[type=text],input[type=email],input[type=password],input[type=datetime-local],input[type=number],select,textarea{
   width:100%;
   padding:9px 11px;
   border:1px solid var(--line);
@@ -373,23 +373,23 @@ label.field-label{
 </head>
 <body>
 
-<!-- TELA DE LOGIN BLOQUEADA -->
+<!-- TELA DE LOGIN SEGURA VIA SUPABASE AUTH -->
 <div id="login-screen">
   <div class="login-box">
     <div class="brand-mark" style="justify-content:center;color:var(--ink);margin-bottom:8px;">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M2 20 Q7 14 12 20 Q17 14 22 20" stroke="#E2571D" stroke-width="2.2" stroke-linecap="round"/><path d="M4 15 Q8 10 12 15 Q16 10 20 15" stroke="#5B9A78" stroke-width="1.8" stroke-linecap="round" opacity=".8"/></svg>
       Vistoria
     </div>
-    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:20px;">Área Restrita e Confidencial</p>
+    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:20px;">Acesso Restrito - Equipe de Inspeção</p>
     <div class="field" style="text-align:left;">
-      <label class="field-label">Usuário</label>
-      <input type="text" id="login-user" placeholder="Digite o usuário">
+      <label class="field-label">E-mail Corporativo</label>
+      <input type="email" id="login-email" placeholder="equipe@mapabase.com.br">
     </div>
     <div class="field" style="text-align:left;">
       <label class="field-label">Senha de Acesso</label>
       <input type="password" id="login-pass" placeholder="Digite a senha">
     </div>
-    <button class="btn primary" id="btn-entrar" style="width:100%;justify-content:center;margin-top:6px;">Acessar Aplicativo</button>
+    <button class="btn primary" id="btn-entrar" style="width:100%;justify-content:center;margin-top:6px;">Entrar na Plataforma</button>
   </div>
 </div>
 
@@ -400,10 +400,13 @@ label.field-label{
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M2 20 Q7 14 12 20 Q17 14 22 20" stroke="#E2571D" stroke-width="2" stroke-linecap="round"/><path d="M4 15 Q8 10 12 15 Q16 10 20 15" stroke="#5B9A78" stroke-width="1.6" stroke-linecap="round" opacity=".8"/></svg>
         Vistoria
       </div>
-      <div class="brand-sub">Inspeções ambientais de campo</div>
+      <div class="brand-sub">Banco de Dados em Nuvem Ativo</div>
     </div>
     <nav class="mainnav" id="mainnav"></nav>
-    <div class="sidebar-foot">Dados sincronizados na Nuvem.</div>
+    <div class="sidebar-foot">
+      <div id="status-sync">Sincronizado via Supabase</div>
+      <button class="btn ghost sm" id="btn-logout" style="margin-top:10px; width:100%; color: var(--ink-soft);">Sair do Sistema</button>
+    </div>
   </aside>
 
   <div id="main">
@@ -416,10 +419,12 @@ label.field-label{
 
 <script>
 /* ============================================================
-   CONFIGURAÇÃO DO BANCO DE DADOS SUPABASE (COLE SUAS CHAVES AQUI)
+   CONFIGURAÇÃO DO BANCO DE DADOS SUPABASE
+   Cole suas chaves exatas abaixo!
    ============================================================ */
 const SUPABASE_URL = '';
 const SUPABASE_KEY = '';
+
 const _supabase = (window.supabase && SUPABASE_URL) ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 /* ============================================================
@@ -437,12 +442,6 @@ const state = {
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
-// Retorna Data/Hora no formato local (Fuso Horário do Brasil)
-function getLocalIsoDatetime() {
-  const tzoffset = (new Date()).getTimezoneOffset() * 60000;
-  return (new Date(Date.now() - tzoffset)).toISOString().slice(0, 16);
-}
-
 async function storageGet(key) {
   try {
     const val = localStorage.getItem(key);
@@ -457,34 +456,30 @@ async function storageSet(key, value) {
   } catch(e) { return false; }
 }
 
-async function saveEmpreendimentos(){ await storageSet('empreendimentos', state.empreendimentos); }
-async function saveEstruturas(){ await storageSet('estruturas', state.estruturas); }
-
-async function saveVistoria(v){
-  if(_supabase){
-    try{
-      const ncItens = v.itens.filter(i=>i.status==='nc');
-      const ordemCrit = {critica:4,alta:3,media:2,baixa:1};
-      const critMax = ncItens.reduce((max,i)=> (ordemCrit[i.criticidade]||0) > (ordemCrit[max]||0) ? i.criticidade : max, null);
-
-      await _supabase.from('vistorias').upsert({
-        id: v.id,
-        empreendimento_nome: v.empreendimentoNome,
-        estrutura_nome: v.estruturaNome,
-        responsavel: v.responsavel,
-        data_hora: v.dataHora,
-        gps: v.gps,
-        itens: v.itens,
-        total_itens: v.itens.length,
-        total_nc: ncItens.length,
-        criticidade_max: critMax
-      });
-    }catch(err){ console.error('Erro nuvem:', err); }
-  }
-  return await storageSet('vistoria:'+v.id, v);
+/* --- SINCRONIZAÇÃO COMPLETA: Empreendimentos e Estruturas --- */
+async function syncGlobalNuvem(){
+  if(!_supabase) return false;
+  try {
+    const [empReq, estReq] = await Promise.all([
+      _supabase.from('empreendimentos').select('*'),
+      _supabase.from('estruturas').select('*')
+    ]);
+    
+    if(empReq.data && empReq.data.length > 0) {
+      state.empreendimentos = empReq.data.map(d=>({id: d.id, nome: d.nome, tipo: d.tipo, estruturas: d.estruturas, criadoEm: d.criado_em}));
+      await storageSet('empreendimentos', state.empreendimentos);
+    }
+    
+    if(estReq.data && estReq.data.length > 0) {
+      state.estruturas = estReq.data.map(d=>({id: d.id, nome: d.nome, itens: d.itens}));
+      await storageSet('estruturas', state.estruturas);
+    }
+    
+    await loadVistoriasNuvem();
+    return true;
+  } catch(e) { console.error(e); return false; }
 }
 
-// Busca na nuvem de TODOS os inspetores para atualizar o Painel
 async function loadVistoriasNuvem(){
   if(_supabase){
     try{
@@ -502,11 +497,11 @@ async function loadVistoriasNuvem(){
           criticidades: (d.itens||[]).filter(i=>i.status==='nc').map(i=>i.criticidade)
         }));
         await storageSet('vistorias:index', state.vistoriasIndex);
-        return;
       }
     }catch(e){}
+  } else {
+    state.vistoriasIndex = (await storageGet('vistorias:index')) || [];
   }
-  state.vistoriasIndex = (await storageGet('vistorias:index')) || [];
 }
 
 async function loadVistoria(id){ 
@@ -528,28 +523,97 @@ async function loadVistoria(id){
 }
 
 /* ============================================================
-   AUTENTICAÇÃO DE LOGIN
+   AUTENTICAÇÃO REAL E SEGURA NO SUPABASE
    ============================================================ */
-function checkAuth(){
-  const loginUser = document.getElementById('login-user');
-  const loginInput = document.getElementById('login-pass');
+async function checkAuth(){
   const loginScreen = document.getElementById('login-screen');
+  
+  if(!_supabase) {
+    alert("AVISO: URL e Chave do Supabase não configuradas no código!");
+    return;
+  }
+
+  // Verifica se o usuário já tem uma sessão ativa (logado)
+  const { data: { session } } = await _supabase.auth.getSession();
+  
+  if (session) {
+    loginScreen.style.display = 'none'; // Já está logado, libera a tela
+    iniciarApp(); 
+    return;
+  }
+
+  // Se não tem sessão, aguarda digitar
+  const loginEmail = document.getElementById('login-email');
+  const loginInput = document.getElementById('login-pass');
   const btnEntrar = document.getElementById('btn-entrar');
   
-  function tentarLogin() {
-    if(loginUser.value.trim() === 'MapaBase' && loginInput.value === 'mpbs_1210'){
-      loginScreen.style.display = 'none';
+  async function tentarLogin() {
+    const email = loginEmail.value.trim().toLowerCase();
+    const pass = loginInput.value;
+
+    if (!email.endsWith('@mapabase.com.br')) {
+      alert('Acesso negado: É obrigatório utilizar um e-mail com domínio @mapabase.com.br!');
+      return;
+    }
+
+    btnEntrar.textContent = 'Autenticando...';
+    btnEntrar.disabled = true;
+
+    // Conecta de verdade ao Supabase Auth
+    const { data, error } = await _supabase.auth.signInWithPassword({
+      email: email,
+      password: pass,
+    });
+
+    if (error) {
+      alert('Falha no login. Verifique seu e-mail e senha.');
+      btnEntrar.textContent = 'Entrar na Plataforma';
+      btnEntrar.disabled = false;
     } else {
-      alert('Usuário ou Senha incorretos!');
+      loginScreen.style.display = 'none';
+      iniciarApp();
     }
   }
 
   btnEntrar.onclick = tentarLogin;
-  
-  // Permite logar apertando o botão "Enter" no celular
   loginInput.addEventListener("keyup", function(event) {
     if (event.key === "Enter") tentarLogin();
   });
+}
+
+document.getElementById('btn-logout').onclick = async () => {
+  if(_supabase) {
+    await _supabase.auth.signOut();
+    window.location.reload(); // Recarrega a página forçando aparecer o login
+  }
+};
+
+/* ============================================================
+   INICIALIZAÇÃO DO APP APÓS LOGIN BEM-SUCEDIDO
+   ============================================================ */
+async function iniciarApp(){
+  showToast('Sincronizando com a Nuvem...');
+  const syncOk = await syncGlobalNuvem();
+  
+  if(!syncOk){
+    const emp = await storageGet('empreendimentos');
+    const est = await storageGet('estruturas');
+    state.empreendimentos = emp || [];
+    state.estruturas = est || [];
+  }
+
+  if(state.estruturas.length === 0){
+    state.estruturas = DEFAULT_ESTRUTURAS;
+    if(_supabase) {
+      for(let e of state.estruturas){
+        await _supabase.from('estruturas').upsert({id: e.id, nome: e.nome, itens: e.itens});
+      }
+    }
+    await storageSet('estruturas', state.estruturas);
+  }
+  
+  state.ready = true;
+  render();
 }
 
 /* ============================================================
@@ -586,7 +650,7 @@ const DEFAULT_ESTRUTURAS = [
   {texto:'O abastecimento está sendo realizado exclusivamente na pista de abastecimento?',cat:'Estrutural/Efluentes'},
   {texto:'O tanque apresenta ausência de vazamentos aparentes?',cat:'Estrutural/Efluentes'},
   {texto:'Os suspiros/respiros estão íntegros e protegidos contra entrada de água?',cat:'Estrutural/Efluentes'},
-  {texto:'A estrutura de apoio/berço do tanque está íntegra e estável?',cat:'Estrutural/Efluentes'},
+  {texto:'A structure de apoio/berço do tanque está íntegra e estável?',cat:'Estrutural/Efluentes'},
   {texto:'A bacia de contenção está com rachaduras ou falhas estruturais?',cat:'Estrutural/Efluentes'},
   {texto:'A altura da bacia de contenção é adequada ao volume do tanque?',cat:'Estrutural/Efluentes'},
   {texto:'Há manchas de óleo no piso da bacia de contenção, pista de abastecimento ou no solo?',cat:'Estrutural/Efluentes'},
@@ -606,28 +670,7 @@ const DEFAULT_ESTRUTURAS = [
 ].map(e => ({ id: uid(), nome: e.nome, itens: e.itens }));
 
 /* ============================================================
-   INICIALIZAÇÃO
-   ============================================================ */
-async function init(){
-  checkAuth();
-  const emp = await storageGet('empreendimentos');
-  const est = await storageGet('estruturas');
-  
-  await loadVistoriasNuvem();
-
-  state.empreendimentos = emp || [];
-  if(est && est.length){
-    state.estruturas = est;
-  } else {
-    state.estruturas = DEFAULT_ESTRUTURAS;
-    await saveEstruturas();
-  }
-  state.ready = true;
-  render();
-}
-
-/* ============================================================
-   HELPERS DE UI
+   HELPERS DE UI E FUNÇÕES COMUNS
    ============================================================ */
 function showToast(msg){
   const t = document.getElementById('toast');
@@ -690,7 +733,7 @@ function getGPS(){
 }
 
 /* ============================================================
-   NAVEGAÇÃO
+   NAVEGAÇÃO E MENUS
    ============================================================ */
 const NAV = [
   {id:'dashboard', label:'Painel', ic:'&#9679;'},
@@ -712,12 +755,10 @@ function renderNav(){
     b.addEventListener('click', async ()=> {
       if(b.dataset.nav === 'nova') state.novaVistoria = null;
       
-      // Atualiza os dados da nuvem sempre que voltar para Painel ou Vistorias
       if((b.dataset.nav === 'dashboard' || b.dataset.nav === 'vistorias') && _supabase){
-        showToast('Atualizando dados...');
-        await loadVistoriasNuvem();
+        showToast('Atualizando dados da Nuvem...');
+        await syncGlobalNuvem();
       }
-      
       setView(b.dataset.nav);
     });
   });
@@ -765,7 +806,7 @@ function viewDashboard(){
   return `
   <div class="view-head">
     <div><div class="eyebrow">Visão geral</div><h1 class="view-title">Painel de inspeções</h1>
-    <div class="view-sub">Indicadores de vistorias de toda a equipe na nuvem.</div></div>
+    <div class="view-sub">Indicadores de vistorias de toda a equipe em tempo real.</div></div>
     <button class="btn primary" id="btn-nova-topo">+ Nova vistoria</button>
   </div>
 
@@ -830,7 +871,7 @@ function bindDashboard(){
 }
 
 /* ============================================================
-   EMPREENDIMENTOS
+   EMPREENDIMENTOS (SINCRONIZADO)
    ============================================================ */
 function viewEmpreendimentos(){
   return `
@@ -881,7 +922,7 @@ function empreendimentoModal(existing){
         ${isEdit?'<button class="btn danger" id="emp-del">Excluir</button>':''}
         <div class="spacer"></div>
         <button class="btn ghost" id="modal-cancel">Cancelar</button>
-        <button class="btn primary" id="emp-salvar">Salvar</button>
+        <button class="btn primary" id="emp-salvar">Salvar na Nuvem</button>
       </div>
     </div>
   </div>`;
@@ -896,7 +937,8 @@ function empreendimentoModal(existing){
     document.getElementById('emp-del').onclick = async ()=>{
       if(!confirm('Excluir este empreendimento? As vistorias já realizadas serão mantidas.')) return;
       state.empreendimentos = state.empreendimentos.filter(e=>e.id!==existing.id);
-      await saveEmpreendimentos();
+      await storageSet('empreendimentos', state.empreendimentos);
+      if(_supabase) await _supabase.from('empreendimentos').delete().eq('id', existing.id);
       close(); render(); showToast('Empreendimento excluído.');
     };
   }
@@ -905,12 +947,21 @@ function empreendimentoModal(existing){
     if(!nome){ showToast('Informe o nome do empreendimento.'); return; }
     const tipo = document.getElementById('emp-tipo').value.trim();
     const estruturas = [...modal.querySelectorAll('[data-est].sel')].map(b=>b.dataset.est);
+    
+    let empObj;
     if(isEdit){
       Object.assign(existing, {nome, tipo, estruturas});
+      empObj = existing;
     } else {
-      state.empreendimentos.push({ id: uid(), nome, tipo, estruturas, criadoEm: new Date().toISOString() });
+      empObj = { id: uid(), nome, tipo, estruturas, criadoEm: new Date().toISOString() };
+      state.empreendimentos.push(empObj);
     }
-    await saveEmpreendimentos();
+    
+    await storageSet('empreendimentos', state.empreendimentos);
+    if(_supabase) {
+      await _supabase.from('empreendimentos').upsert({ id: empObj.id, nome: empObj.nome, tipo: empObj.tipo, estruturas: empObj.estruturas, criado_em: empObj.criadoEm });
+    }
+    
     close(); render(); showToast('Empreendimento salvo.');
   };
 }
@@ -923,7 +974,7 @@ function bindEmpreendimentos(){
 }
 
 /* ============================================================
-   BIBLIOTECA DE ESTRUTURAS
+   BIBLIOTECA DE ESTRUTURAS (SINCRONIZADO)
    ============================================================ */
 function viewEstruturas(){
   return `
@@ -972,7 +1023,7 @@ function estruturaModal(existing){
         ${isEdit?'<button class="btn danger" id="est-del">Excluir estrutura</button>':''}
         <div class="spacer"></div>
         <button class="btn ghost" id="modal-cancel">Cancelar</button>
-        <button class="btn primary" id="est-salvar">Salvar</button>
+        <button class="btn primary" id="est-salvar">Salvar na Nuvem</button>
       </div>
     </div>
   </div>`;
@@ -995,7 +1046,11 @@ function estruturaModal(existing){
       if(!confirm('Excluir esta estrutura da biblioteca? Isso não afeta vistorias já realizadas.')) return;
       state.estruturas = state.estruturas.filter(e=>e.id!==existing.id);
       state.empreendimentos.forEach(e=> e.estruturas = e.estruturas.filter(id=>id!==existing.id));
-      await saveEstruturas(); await saveEmpreendimentos();
+      
+      await storageSet('estruturas', state.estruturas);
+      await storageSet('empreendimentos', state.empreendimentos);
+      if(_supabase) await _supabase.from('estruturas').delete().eq('id', existing.id);
+      
       close(); render(); showToast('Estrutura excluída.');
     };
   }
@@ -1003,9 +1058,21 @@ function estruturaModal(existing){
     const nome = document.getElementById('est-nome').value.trim();
     if(!nome){ showToast('Informe o nome da estrutura.'); return; }
     const itensLimpos = itens.filter(i=>i.texto.trim()).map(i=>({id:i.id||uid(), texto:i.texto.trim(), categoria: i.categoria?.trim()||null}));
-    if(isEdit){ Object.assign(existing, {nome, itens: itensLimpos}); }
-    else { state.estruturas.push({ id: uid(), nome, itens: itensLimpos }); }
-    await saveEstruturas();
+    
+    let estObj;
+    if(isEdit){ 
+      Object.assign(existing, {nome, itens: itensLimpos}); 
+      estObj = existing;
+    } else { 
+      estObj = { id: uid(), nome, itens: itensLimpos };
+      state.estruturas.push(estObj); 
+    }
+    
+    await storageSet('estruturas', state.estruturas);
+    if(_supabase) {
+      await _supabase.from('estruturas').upsert({ id: estObj.id, nome: estObj.nome, itens: estObj.itens });
+    }
+    
     close(); render(); showToast('Estrutura salva.');
   };
 }
@@ -1241,13 +1308,12 @@ async function finalizarVistoria(){
   const est = estruturaById(nv.estruturaId);
   const btn = document.getElementById('nv-finalizar');
   
-  // Se o usuário não preencheu a data, avisa
   if (!nv.dataHora) {
     showToast('Por favor, informe a Data e Hora da Vistoria.');
     return;
   }
   
-  btn.disabled = true; btn.textContent = 'Salvando...';
+  btn.disabled = true; btn.textContent = 'Enviando para a Nuvem...';
 
   const itensResp = est.itens.map(it=>{
     const r = nv.respostas[it.id] || {status:null};
@@ -1280,7 +1346,7 @@ async function finalizarVistoria(){
   state.novaVistoria = null;
   state.vistoriaAberta = vistoria;
   setView('vistoria-detalhe');
-  showToast('Vistoria salva com sucesso!');
+  showToast('Vistoria salva com sucesso na Nuvem!');
 }
 
 /* ============================================================
@@ -1426,7 +1492,8 @@ async function bindNaoConformidades(){
   });
 }
 
-init();
+// Inicializa a camada de Segurança antes do App carregar
+checkAuth();
 </script>
 </body>
 </html>
