@@ -70,6 +70,7 @@ summary { list-style: none; }
   display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
 }
 .brand{padding:24px 20px 18px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;}
+.brand-mark img {max-width:100%;height:auto;max-height:40px;object-fit:contain;}
 .brand-sub{font-size:11px;color:#9FB0A2;margin-top:8px;letter-spacing:.06em;text-transform:uppercase;}
 nav.mainnav{padding:16px 12px;display:flex;flex-direction:column;gap:4px;flex:1;overflow-y:auto;}
 .navbtn{
@@ -938,8 +939,8 @@ function viewEmpreendimentos() {
             ${(e.estruturas||[]).length > 0 ? 
               e.estruturas.map(estRef => {
                 const strObj = state.estruturas.find(s => s.id === estRef || s.nome === estRef);
-                const nomeDisplay = strObj ? strObj.nome : estRef;
-                return `<span class="est-list-chip">${esc(nomeDisplay)}</span>`;
+                if (!strObj) return `<span class="est-list-chip" style="color:var(--nc);" title="Precisa ser atualizada">⚠️ Desconhecida</span>`;
+                return `<span class="est-list-chip">${esc(strObj.nome)}</span>`;
               }).join('') : 
               '<span class="hint">Nenhuma estrutura vinculada.</span>'
             }
@@ -1073,14 +1074,11 @@ function viewEstruturas() {
         <h2 class="sector-title">${setor.title}</h2>
       </div>
       <div class="grid cols-3">
-        ${ests.map(e => {
-          const visual = getSetorVisual(e.setor);
-          return `
+        ${ests.map(e => `
           <div class="visual-card">
-            <div class="visual-card-cover ${visual.class}">${visual.icon}</div>
             <div class="visual-card-body">
               <h3 class="visual-card-title">${esc(e.nome)}</h3>
-              <div class="visual-card-desc">
+              <div class="visual-card-desc" style="margin-top: 8px;">
                 ${(e.itens||[]).length} itens de verificação no checklist.
               </div>
             </div>
@@ -1090,8 +1088,7 @@ function viewEstruturas() {
               <button class="btn ghost sm danger" onclick="excluirEstrutura('${e.id}')">✕</button>
             </div>
           </div>
-          `
-        }).join('')}
+        `).join('')}
       </div>`;
     }
   });
@@ -1298,7 +1295,7 @@ function viewNovaVistoria() {
             <span class="item-num">Item ${i+1} ${it.categoria ? `· ${esc(it.categoria)}`:''}</span>
             <div class="item-txt">
               ${esc(it.texto)}
-              <button class="btn ghost sm" style="padding:0 4px; border:none; margin-left:4px; font-size:12px; color:var(--ink-faint);" onclick="window.editarTextoItemNV('${it.id}')">✏️</button>
+              <button class="btn ghost sm" style="padding:0 4px; border:none; margin-left:4px; font-size:12px; color:var(--ink-faint);" onclick="window.editarTextoItemNV('${it.id}')" title="Editar Tópico">✏️</button>
             </div>
           </div>
           <div class="seg">
@@ -1351,7 +1348,7 @@ function viewNovaVistoria() {
     }).join('')}
     
     <div style="margin: 24px 0; text-align: center;">
-      <button class="btn ghost" id="btn-nv-add-item" style="border: 2px dashed var(--line); width: 100%; padding:16px; color:var(--ink-soft); font-size:15px;">+ Adicionar Novo Tópico nesta Vistoria</button>
+      <button class="btn ghost" id="btn-nv-add-item" style="border: 2px dashed var(--line); width: 100%; padding:16px; color:var(--ink-soft); font-size:15px; transition:all 0.2s;">+ Adicionar Novo Tópico nesta Vistoria</button>
     </div>
 
     <div style="margin-top:24px; padding:20px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); display:flex; justify-content:space-between; align-items:center; position:sticky; bottom:16px; box-shadow:var(--shadow); z-index:10;">
@@ -1492,7 +1489,7 @@ window.removeFoto = function(itemId, photoIdx) {
 }
 
 /* ============================================================
-   TELA: DASHBOARD COM FILTROS
+   TELA: DASHBOARD COM GRÁFICO DE PIZZA
    ============================================================ */
 function viewDashboard() {
   const filtradas = aplicarFiltros(state.vistoriasIndex, 'dash');
@@ -1554,19 +1551,65 @@ function viewDashboard() {
     
     <div class="card card-pad">
       <h3 style="margin:0 0 20px;font-family:var(--font-display);font-size:22px;font-weight:600;">Distribuição de Criticidade</h3>
-      ${['critica','alta','media','baixa'].map(k=>`
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-          <div style="width:80px;font-size:13px;font-weight:600;color:var(--ink-soft);">${criticidadeLabel(k)}</div>
-          <div style="flex:1;background:var(--surface-2);border-radius:8px;height:16px;overflow:hidden;">
-            <div style="width:${(porCrit[k]/maxCrit*100)||0}%;height:100%;background:var(--${k});"></div>
-          </div>
-          <div style="width:30px;text-align:right;font-family:var(--font-mono);font-size:13px;font-weight:500;">${porCrit[k]}</div>
-        </div>`).join('')}
+      <div style="display:flex; flex-direction:column; align-items:center; gap:24px;">
+        <div style="width:200px; height:200px; position:relative;">
+           <canvas id="dashPieChart"></canvas>
+           ${totalNC === 0 ? '<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; color:var(--ink-faint); text-align:center;">0 NCs</div>' : ''}
+        </div>
+        <div style="width:100%;">
+          ${['critica','alta','media','baixa'].map(k=>`
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+              <div style="width:80px;font-size:13px;font-weight:600;color:var(--ink-soft);">${criticidadeLabel(k)}</div>
+              <div style="flex:1;background:var(--surface-2);border-radius:8px;height:16px;overflow:hidden;">
+                <div style="width:${(porCrit[k]/maxCrit*100)||0}%;height:100%;background:var(--${k});"></div>
+              </div>
+              <div style="width:30px;text-align:right;font-family:var(--font-mono);font-size:13px;font-weight:500;">${porCrit[k]}</div>
+            </div>`).join('')}
+        </div>
+      </div>
     </div>
   </div>`;
 }
 
-function bindDashboard() { bindFilterBar('dash'); }
+function bindDashboard() { 
+  bindFilterBar('dash'); 
+  
+  const canvas = document.getElementById('dashPieChart');
+  if(canvas) {
+      if(window.dashPieChartInstance) window.dashPieChartInstance.destroy();
+      
+      const filtradas = aplicarFiltros(state.vistoriasIndex, 'dash');
+      const porCrit = { baixa: 0, media: 0, alta: 0, critica: 0 };
+      filtradas.forEach(v => {
+        if (v.criticidades) {
+          porCrit.baixa += v.criticidades.baixa || 0;
+          porCrit.media += v.criticidades.media || 0;
+          porCrit.alta += v.criticidades.alta || 0;
+          porCrit.critica += v.criticidades.critica || 0;
+        }
+      });
+
+      const ctx = canvas.getContext('2d');
+      window.dashPieChartInstance = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+              labels: ['Crítica', 'Alta', 'Média', 'Baixa'],
+              datasets: [{
+                  data: [porCrit.critica, porCrit.alta, porCrit.media, porCrit.baixa],
+                  backgroundColor: ['#9B1C2E', '#E2571D', '#D69E2E', '#5B9A78'],
+                  borderWidth: 2,
+                  borderColor: '#ffffff'
+              }]
+          },
+          options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              cutout: '65%',
+              plugins: { legend: { display: false } }
+          }
+      });
+  }
+}
 
 /* EXPORTAÇÃO EXCEL REAL */
 window.exportarExcel = async function(tipo = 'total', valor = '', empNome = '') {
