@@ -129,7 +129,7 @@ nav.mainnav{padding:16px 12px;display:flex;flex-direction:column;gap:4px;flex:1;
 .visual-card { display:flex; flex-direction:column; overflow:hidden; transition:transform 0.2s, box-shadow 0.2s; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); }
 .visual-card:hover { transform:translateY(-2px); box-shadow: 0 8px 24px rgba(22,36,28,.08); }
 .visual-card-cover { height:100px; display:flex; align-items:center; justify-content:center; font-size:40px; position:relative; }
-.visual-card-large .visual-card-cover { height: 140px; font-size: 56px; } /* Para Empreendimentos */
+.visual-card-large .visual-card-cover { height: 140px; font-size: 56px; } 
 .cover-geral { background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%); }
 .cover-agro { background: linear-gradient(135deg, #d4fc79 0%, #96e6a1 100%); }
 .cover-mina { background: linear-gradient(135deg, #e6dada 0%, #274046 100%); }
@@ -138,7 +138,6 @@ nav.mainnav{padding:16px 12px;display:flex;flex-direction:column;gap:4px;flex:1;
 .visual-card-desc { font-size:13.5px; color:var(--ink-soft); margin-bottom:16px; flex:1; line-height:1.5; }
 .visual-card-foot { padding:12px 20px; border-top:1px solid var(--line); background:var(--surface-2); display:flex; gap:8px; justify-content:flex-end; }
 
-/* ESTRUTURAS VINCULADAS NO CARD DE EMPREENDIMENTO */
 .est-list-chip { display:inline-block; background:var(--surface-2); border:1px solid var(--line); border-radius:4px; padding:3px 8px; font-size:11.5px; margin:2px 4px 2px 0; color:var(--ink-soft); }
 
 /* FILTROS (Dashboard, Histórico, NCs) */
@@ -187,7 +186,7 @@ label.field-label{font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-
 .modal-body{padding:24px;}
 .modal-foot{padding:16px 24px 24px;display:flex;justify-content:flex-end;gap:12px; background:var(--surface-2); border-top:1px solid var(--line);}
 
-/* CHECKLIST ITENS (NOVA VISTORIA) */
+/* CHECKLIST ITENS E EDITOR */
 .item-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin-bottom:12px;overflow:hidden; box-shadow:var(--shadow);}
 .item-top{padding:16px 20px;display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;}
 .item-num{font-family:var(--font-mono);font-size:12px;font-weight:500;color:var(--ink-faint);margin-bottom:6px;display:block;}
@@ -209,6 +208,13 @@ label.field-label{font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-
 }
 .photo-add:hover{border-color:var(--accent); color:var(--accent);}
 
+/* EDITOR DE ESTRUTURA ROW */
+.ed-item-row { padding:16px; display:flex; gap:12px; align-items:center; }
+.ed-arrows { display:flex; flex-direction:column; line-height:0.8; font-size:22px; color:var(--ink-faint); cursor:ns-resize; }
+.ed-inputs { display:flex; gap:12px; flex:1; }
+.ed-item-txt { flex:1; }
+.ed-item-cat { width:200px; }
+
 .rowflex{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
 
 @media(max-width:860px){
@@ -222,7 +228,15 @@ label.field-label{font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-
   .item-top { flex-direction:column; gap:12px; }
   .seg { width:100%; display:flex; }
   .seg button { flex:1; text-align:center; padding:12px 0; font-size:12.5px;}
+  
+  /* EDITOR RESPONSIVO */
+  .ed-item-row { flex-wrap:wrap; }
+  .ed-arrows { flex-direction:row; gap:16px; order:1; }
+  .ed-item-row > .danger { order:2; margin-left:auto; }
+  .ed-inputs { flex-direction:column; width:100%; order:3; margin-top:8px; }
+  .ed-item-cat { width:100%; }
 }
+
 @media print{
   .print-only-title { display:block !important; margin-bottom: 20px; }
   #sidebar, .no-print, nav.mainnav, .view-head, .filter-bar, #modal-root { display:none !important; }
@@ -240,7 +254,7 @@ label.field-label{font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-
 <div id="login-screen">
   <div class="login-box">
     <div style="margin-bottom: 24px;">
-      <h1 style="font-family:var(--font-display); font-size: 36px; margin:0; color: var(--accent);">MapaBase</h1>
+      <img src="LOGO_VERT.png" alt="MapaBase Gestão Ambiental" style="max-width: 100%; height: auto; max-height: 90px; object-fit: contain;">
     </div>
     <p style="font-size:14px;color:var(--ink-soft);margin-bottom:24px;">Acesso Restrito - Equipe de Inspeção</p>
     <div class="field" style="text-align:left;">
@@ -258,7 +272,9 @@ label.field-label{font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-
 <div id="shell">
   <aside id="sidebar">
     <div class="brand">
-      <h1 style="font-family:var(--font-display); font-size: 32px; margin:0; color: var(--accent);">MapaBase</h1>
+      <div class="brand-mark">
+        <img src="LOGO_VERT.png" alt="MapaBase" style="max-height: 44px; width: auto; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); margin-bottom: 4px;">
+      </div>
       <div class="brand-sub">Ambiente em Nuvem</div>
     </div>
     <nav class="mainnav" id="mainnav"></nav>
@@ -806,6 +822,7 @@ window.sincronizarPendentes = async function() {
   for(let p of pendentes) {
     const v = await loadVistoria(p.id);
     if(v) {
+      
       let critMax = null;
       const criticidadesCount = { baixa: 0, media: 0, alta: 0, critica: 0 };
       v.itens.forEach(i => {
@@ -893,7 +910,7 @@ async function saveVistoria(v) {
 }
 
 /* ============================================================
-   TELAS: EMPREENDIMENTOS E MODAL (COM CARDS VISUAIS)
+   TELAS: EMPREENDIMENTOS E MODAL (COM CARDS VISUAIS E MAPEAMENTO)
    ============================================================ */
 function viewEmpreendimentos() {
   return `
@@ -919,7 +936,11 @@ function viewEmpreendimentos() {
           <div class="visual-card-desc" style="margin-top:12px;">
             <strong style="display:block; margin-bottom:6px; color:var(--ink);">Estruturas Vinculadas:</strong>
             ${(e.estruturas||[]).length > 0 ? 
-              e.estruturas.map(est => `<span class="est-list-chip">${esc(est)}</span>`).join('') : 
+              e.estruturas.map(estRef => {
+                const strObj = state.estruturas.find(s => s.id === estRef || s.nome === estRef);
+                const nomeDisplay = strObj ? strObj.nome : estRef;
+                return `<span class="est-list-chip">${esc(nomeDisplay)}</span>`;
+              }).join('') : 
               '<span class="hint">Nenhuma estrutura vinculada.</span>'
             }
           </div>
@@ -973,7 +994,7 @@ function abrirModalEmpreendimento(empExistente = null) {
           <div style="max-height:200px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; padding:12px; background:#fafbf9;">
             ${state.estruturas.map(est => `
               <label style="display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:14px; cursor:pointer; padding:4px; border-radius:4px; transition:background 0.2s;">
-                <input type="checkbox" class="mod-emp-est" value="${esc(est.nome)}" ${vinculadas.includes(est.nome) ? 'checked' : ''} style="width:auto;"> ${esc(est.nome)}
+                <input type="checkbox" class="mod-emp-est" value="${esc(est.id)}" ${(vinculadas.includes(est.id) || vinculadas.includes(est.nome)) ? 'checked' : ''} style="width:auto;"> ${esc(est.nome)}
               </label>
             `).join('')}
           </div>
@@ -1146,12 +1167,14 @@ function viewEditorEstrutura() {
 
   <div id="ed-est-itens-list">
     ${est.itens.map((it, i) => `
-      <div class="item-card" style="padding:16px; display:flex; gap:12px; align-items:center;">
-        <div style="font-size:18px; color:var(--ink-faint); cursor:ns-resize; display:flex; flex-direction:column; line-height:0.8;">
+      <div class="item-card ed-item-row">
+        <div class="ed-arrows">
           <span onclick="moverItemEst(${i}, -1)">▲</span><span onclick="moverItemEst(${i}, 1)">▼</span>
         </div>
-        <input type="text" class="ed-item-txt" data-idx="${i}" value="${esc(it.texto)}" style="flex:1;">
-        <input type="text" class="ed-item-cat" data-idx="${i}" value="${esc(it.categoria||'')}" placeholder="Categoria (Opcional)" style="width:200px;">
+        <div class="ed-inputs">
+          <input type="text" class="ed-item-txt" data-idx="${i}" value="${esc(it.texto)}" placeholder="Texto da pergunta...">
+          <input type="text" class="ed-item-cat" data-idx="${i}" value="${esc(it.categoria||'')}" placeholder="Categoria (Opcional)">
+        </div>
         <button class="btn ghost sm danger" onclick="removerItemEst(${i})">✕</button>
       </div>
     `).join('')}
@@ -1271,7 +1294,13 @@ function viewNovaVistoria() {
       return `
       <div class="item-card">
         <div class="item-top">
-          <div style="flex:1;"><span class="item-num">Item ${i+1} ${it.categoria ? `· ${esc(it.categoria)}`:''}</span><div class="item-txt">${esc(it.texto)}</div></div>
+          <div style="flex:1;">
+            <span class="item-num">Item ${i+1} ${it.categoria ? `· ${esc(it.categoria)}`:''}</span>
+            <div class="item-txt">
+              ${esc(it.texto)}
+              <button class="btn ghost sm" style="padding:0 4px; border:none; margin-left:4px; font-size:12px; color:var(--ink-faint);" onclick="window.editarTextoItemNV('${it.id}')">✏️</button>
+            </div>
+          </div>
           <div class="seg">
             <button class="c ${resp.status==='conforme'?'active':''}" data-status="conforme" data-id="${it.id}">Conforme</button>
             <button class="n ${resp.status==='nc'?'active':''}" data-status="nc" data-id="${it.id}">Não Conf.</button>
@@ -1321,6 +1350,10 @@ function viewNovaVistoria() {
       </div>`;
     }).join('')}
     
+    <div style="margin: 24px 0; text-align: center;">
+      <button class="btn ghost" id="btn-nv-add-item" style="border: 2px dashed var(--line); width: 100%; padding:16px; color:var(--ink-soft); font-size:15px;">+ Adicionar Novo Tópico nesta Vistoria</button>
+    </div>
+
     <div style="margin-top:24px; padding:20px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); display:flex; justify-content:space-between; align-items:center; position:sticky; bottom:16px; box-shadow:var(--shadow); z-index:10;">
       <div style="font-size:13px; color:var(--ink-soft); font-weight:500;">Revise todos os itens antes de salvar.</div>
       <button class="btn primary" id="btn-nv-save" style="padding:12px 24px; font-size:15px;">✔️ Concluir Vistoria</button>
@@ -1363,6 +1396,22 @@ function bindNovaVistoria() {
   if (nv && nv.step === 2) {
     document.getElementById('btn-nv-back')?.addEventListener('click', () => { nv.step = 1; render(); });
     
+    document.getElementById('btn-nv-add-item')?.addEventListener('click', () => {
+      const texto = prompt('Digite a pergunta/tópico a ser verificado:');
+      if (texto && texto.trim()) {
+        const newItemId = uid();
+        state.novaVistoria.itens.push({
+          id: newItemId,
+          texto: texto.trim(),
+          categoria: 'Adicional (Campo)'
+        });
+        state.novaVistoria.respostas[newItemId] = { status: '', observacao: '', criticidade: 'media', recomendacao: '', fotos: [] };
+        render();
+        showToast('Novo tópico adicionado!');
+        setTimeout(() => document.getElementById('btn-nv-add-item').scrollIntoView({behavior: "smooth"}), 100);
+      }
+    });
+
     document.querySelectorAll('.seg button').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const id = e.target.dataset.id;
@@ -1412,6 +1461,18 @@ function bindNovaVistoria() {
     });
   }
 }
+
+window.editarTextoItemNV = function(id) {
+  const nv = state.novaVistoria;
+  if(!nv) return;
+  const item = nv.itens.find(i => i.id === id);
+  if(!item) return;
+  const novoTexto = prompt('Editar tópico de inspeção:', item.texto);
+  if(novoTexto !== null && novoTexto.trim() !== '') {
+    item.texto = novoTexto.trim();
+    render();
+  }
+};
 
 window.addFoto = async function(event, itemId) {
   const file = event.target.files[0];
